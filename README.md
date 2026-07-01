@@ -70,9 +70,9 @@ Default: `./RandomForest/vega_model.skops`
 ---
 
 ### `-pca / --pca`
-Path to the directory containing the PCA lookup table JSON files. Used as an alternative to the Random Forest when `--disable-onlyacd` is set and `-rf` is not provided.
+Path to the directory `./pca_files` containing the PCA lookup table JSON files. Used as an alternative to the Random Forest when `--disable-onlyacd` is set and `-rf` is not provided.
 
-Default: None
+Default: None 
 
 ---
 
