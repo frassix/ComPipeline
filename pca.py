@@ -136,16 +136,10 @@ class VegaClassifier:
     """
 
     def __init__(self, model_path: str):
-        # skops stores only a whitelisted set of sklearn/numpy types and
-        # cannot execute arbitrary code on load (unlike pickle/joblib).
         untrusted = get_untrusted_types(file=model_path)
         self.clf = skops_load(model_path, trusted=untrusted)
 
-        # The model was trained with n_jobs=-1, but here we score one event
-        # at a time. With n_jobs>1, every single predict_proba() call pays
-        # the cost of spinning up a joblib thread pool across all cores --
-        # overhead that dwarfs the actual single-row prediction work.
-        # Forcing n_jobs=1 removes that per-call overhead entirely.
+        # The model was trained with n_jobs=-1
         if hasattr(self.clf, "n_jobs"):
             self.clf.n_jobs = 1
 

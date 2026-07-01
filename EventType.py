@@ -95,15 +95,6 @@ class EventClassifierPipeline:
             return "UN", 1.00
         
         nhits = event.GetNHTs()
-        #for next iteration
-        #nhits_tracker = 0     
-        #nhits_calorimeter = 0 
-        #for i in range(nhits):
-        #    det_type = event.GetHTAt(i).GetDetectorType()
-        #    if det_type == 1:
-        #        nhits_tracker += 1
-        #    elif det_type == 2:
-        #        nhits_calorimeter += 1
                 
         if nhits == 0:
             return "UN", 1.00
@@ -317,7 +308,7 @@ if __name__ == "__main__":
         geometry_name=args.geometry, 
         model_traced=args.model, 
         onlyACDVeto=args.only_acd_veto, 
-        rf=args.random_forest,
+        rf=None if args.pca is not None else args.random_forest,
         lookup_path=args.pca,
         debug=args.debug
     )
