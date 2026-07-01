@@ -4,6 +4,8 @@ import time
 import os
 import sys
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import ROOT as M
 import torch
 import pca
@@ -59,7 +61,7 @@ class EventClassifierPipeline:
             return data[:, :, :j] if j > 0 else None
     
 
-    def signal_background_classifier(self, event, onlyACDVeto=True, rf=True, thr=0.99):
+    def signal_background_classifier(self, event, onlyACDVeto=True, thr=0.99):
         """First layer: Separates signal from background"""
         
         if not event:
@@ -127,10 +129,10 @@ class EventClassifierPipeline:
 
         return "UN", 1.00
 
-    def process_event(self, event, onlyACDVeto, rf):
+    def process_event(self, event, onlyACDVeto):
         """Coordinates the sequential execution flow of the cascade pipeline."""
         
-        status, prob_bkg = self.signal_background_classifier(event, onlyACDVeto, rf)
+        status, prob_bkg = self.signal_background_classifier(event, onlyACDVeto)
 
         if status == "UN":
             return "UN", 1.00
@@ -214,7 +216,7 @@ def main(input_path, output_dir, geometry_name, model_traced, onlyACDVeto=True, 
                     id_event = Event.GetID()
                 
                     t0 = time.perf_counter()
-                    event_type, probability = pipeline.process_event(Event, onlyACDVeto, rf)
+                    event_type, probability = pipeline.process_event(Event, onlyACDVeto)
                     t_classify += time.perf_counter() - t0
 
                     t0 = time.perf_counter()
@@ -222,20 +224,18 @@ def main(input_path, output_dir, geometry_name, model_traced, onlyACDVeto=True, 
                         mc_process = "UNKNOWN"
                         if Event.GetNIAs() > 1:
                             mc_process = str(Event.GetIAAt(1).GetProcess().Data())
-                            print(
-                                f"SE\nID {id_event}\nMC {mc_process}\nET {event_type}\nTP {probability:.4f}",
-                                file=f_out,
-                            )
+                        print(
+                            f"SE\nID {id_event}\nMC {mc_process}\nET {event_type}\nTP {probability:.4f}",
+                            file=f_out,
+                        )
                     else:
-                        # Write output like Nathan
                         print(
                             f"SE\nID {id_event}\nET {event_type}\nTP {probability:.4f}",
                             file=f_out,
                         )
-
-                        t_write += time.perf_counter() - t0
-                        del Event
-                        pbar.update(1)
+                    t_write += time.perf_counter() - t0
+                    del Event
+                    pbar.update(1)
                         
                     if i % 500 == 0:
                         pbar.set_postfix({
