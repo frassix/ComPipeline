@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import sys
+from pathlib import Path
 
 def parse_etp(filename):
     """
@@ -149,7 +150,7 @@ def compare(mc, et):
     }
     return counts_mc, counts_et, total_matches, match_types, confusion_matrix, confusion_matrix_pct
 
-def print_n_save(counts_mc, counts_et, total_matches, match_types, cm, cmp, filename="counts.txt"):
+def print_n_save(counts_mc, counts_et, total_matches, match_types, cm, cmp, input_filename=None):
     """
     Print the analysis summary to the terminal and save it to a text file.
     """
@@ -172,10 +173,21 @@ Actual PAIR  {cm['PC']:7.0f} - {cmp['PC']:3.2f}%    {cm['PP']:7.0f} - {cmp['PP']
 
     # 1. Print it to the console
     print(output_text)
-    
-    # 2. Save it to the txt file
-    with open(filename, "w") as f:
+
+    # 2. Save it to the txt file in the etp_counts folder
+    output_dir = Path(__file__).resolve().parent / "etp_counts"
+    output_dir.mkdir(exist_ok=True)
+
+    if input_filename is not None:
+        output_name = f"{Path(input_filename).stem}.txt"
+    else:
+        output_name = "counts.txt"
+
+    output_path = output_dir / output_name
+    with open(output_path, "w") as f:
         f.write(output_text)
+    
+    print(f"File successfully saved as {output_path}")
 
 def probs_histo(et, prob):
     """
@@ -240,7 +252,7 @@ def main():
     counts_mc, counts_et, total_matches, match_types, cm, cmp = compare(mc, et)
     
     # Prints
-    print_n_save(counts_mc, counts_et, total_matches, match_types, cm, cmp)
+    print_n_save(counts_mc, counts_et, total_matches, match_types, cm, cmp, input_filename=args.filename)
 
     # Generate the probability histogram only if requested.
     if args.probability:
