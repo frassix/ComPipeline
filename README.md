@@ -83,6 +83,12 @@ Default: 3
 
 ---
 
+### `-3c`
+If used the PointNet will use the 3 class model instead of the binary one.
+If nothing is specified the model is binary (COMP/PAIR)
+
+---
+
 ### `--debug`
 Adds the true MC process label (`MC` field) to each event in the output `.etp` file, read from the simulation's interaction records. Useful for comparing classifier output against ground truth.
 
