@@ -9,14 +9,23 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ROOT as M
 import torch
 import pca
-from PointNetModels.pointnet2C import PointNet
 from pathlib import Path
     
 M.gSystem.Load("$(MEGALIB)/lib/libMEGAlib.so")
 
 class EventClassifierPipeline:
 
-    def __init__(self, model_traced_path, onlyACDVeto=True, random_forest_path=None, lookup_path=None, min_event_size=3):
+    def __init__(self, model_traced_path, onlyACDVeto=True, random_forest_path=None, lookup_path=None, three_class=False, min_size=3):
+        self.three_class = three_class
+        self.min_size = min_size
+
+        if three_class:
+            print("Using 3-class PointNet model (PointNetModels/pointnet3C.py)")
+            from PointNetModels.pointnet3C import PointNet
+        else:
+            print("Using 2-class PointNet model (PointNetModels/pointnet2C.py)")
+            from PointNetModels.pointnet2C import PointNet
+
         if not onlyACDVeto:
             if random_forest_path is not None:
                 print(f"Loading RF model from {random_forest_path}...")
@@ -31,7 +40,6 @@ class EventClassifierPipeline:
             self.pca_classifier = None
 
         print(f"Loading TorchScript model from {model_traced_path}...")
-        self.min_event_size = min_event_size
         self.model = PointNet(add_nhits=False)
         state_dict = torch.load(model_traced_path, map_location=torch.device('cpu'))
         self.model.load_state_dict(state_dict, strict=True)
@@ -90,7 +98,9 @@ class EventClassifierPipeline:
 
     def type_of_signal(self, event):
         """Second layer: Checks if the event is a Photoelectric effect.
-        If not, use PointNet to discriminate between Compton and Pair.
+        If not, use PointNet to discriminate the event topology:
+        - binary model  -> Compton vs Pair
+        - 3-class model -> Compton vs Pair vs PH
         """
         if not event:
             return "UN", 1.00
@@ -101,7 +111,7 @@ class EventClassifierPipeline:
             return "UN", 1.00
 
         # 1.Cut for  Photoelectric effect (PHOT)
-        if not nhits >= self.min_event_size:
+        if not nhits >= self.min_size:
             return "PH", 0.50  # 'PH' for Photoelectric
 
         # 2. If not Photoelectric, extract hit data and execute PointNet
@@ -110,6 +120,14 @@ class EventClassifierPipeline:
         if data_input is None or data_input.shape[2] == 0:
             return "UN", 1.00
 
+        # 3. Dispatch to the head matching the loaded model
+        if self.three_class:
+            return self._type_of_signal_3class(data_input)
+        else:
+            return self._type_of_signal_binary(data_input)
+
+    def _type_of_signal_binary(self, data_input):
+        """PointNet binary head: single scalar logit -> sigmoid + threshold at 0."""
         with torch.no_grad():
             logits, _ = self.model(data_input)
             prob = torch.sigmoid(logits).item()
@@ -120,6 +138,18 @@ class EventClassifierPipeline:
             return "CO", 1.0 - prob  # 'CO' for Compton Scattering
 
         return "UN", 1.00
+
+    def _type_of_signal_3class(self, data_input):
+        """PointNet 3-class head: 3 logits (Compton, Pair, Photoelectric) -> softmax + argmax."""
+        label_map = {0: "CO", 1: "PA", 2: "PH"}  # same order used in training
+
+        with torch.no_grad():
+            logits, _ = self.model(data_input)            # shape [1, 3]
+            probs = torch.softmax(logits, dim=1)           # softmax
+            pred_idx = torch.argmax(probs, dim=1).item()   # class with highest probability
+            prob = probs[0, pred_idx].item()
+
+        return label_map[pred_idx], prob
 
     def process_event(self, event, onlyACDVeto):
         """Coordinates the sequential execution flow of the cascade pipeline."""
@@ -135,7 +165,7 @@ class EventClassifierPipeline:
         final_type, final_prob = self.type_of_signal(event)
         return final_type, final_prob
 
-def main(input_path, output_dir, geometry_name, model_traced, onlyACDVeto=True, rf=None, lookup_path=None, minimum_size=2, debug=False):
+def main(input_path, output_dir, geometry_name, model_traced, onlyACDVeto=True, rf=None, lookup_path=None, debug=False, three_class=False, min_size=3):
 
     # Global MEGAlib initialization
     G = M.MGlobal()
@@ -167,7 +197,7 @@ def main(input_path, output_dir, geometry_name, model_traced, onlyACDVeto=True, 
         return
 
     # Initiate the pipeline object
-    pipeline = EventClassifierPipeline(model_traced, onlyACDVeto=onlyACDVeto, random_forest_path=rf, lookup_path=lookup_path, min_event_size=minimum_size)
+    pipeline = EventClassifierPipeline(model_traced, onlyACDVeto=onlyACDVeto, random_forest_path=rf, lookup_path=lookup_path, three_class=three_class, min_size=min_size)
 
     path_out_dir = Path(output_dir)
     path_out_dir.mkdir(parents=True, exist_ok=True)
@@ -248,7 +278,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Event Classifier Pipeline for MEGAlib simulation files."
     )
-
     parser.add_argument(
         "-i", "--input", 
         type=str, 
@@ -270,54 +299,90 @@ if __name__ == "__main__":
     parser.add_argument(
         "-m", "--model", 
         type=str, 
-        default="./PointNetModels/test_torch_model_params_final_26-06.pth",
-        help="Path to the PointNet model weights file (.pt)."
+        default=None,
+        help="Path to the PointNet model weights file (.pt). If omitted, defaults to "
+             "the 2-class or 3-class checkpoint depending on whether -3c/--three-class is set."
     )
-    
     parser.add_argument(
         "--disable-onlyacd", 
         action="store_false", 
         dest="only_acd_veto",
-        help="Disable the strict ACD-only veto and enable the Random Forest/PCA layer."
+        help="Disable the strict ACD-only veto and enable the Random Forest/PCA layer "
+             "(implied automatically if -rf or -pca is provided)."
     )
     parser.add_argument(
         "-rf", "--random-forest", 
         type=str, 
-        default="./RandomForest/vega_model.skops",
-        help="Path to the Random Forest model file (.skops, used only if ACD-only veto is disabled)."
+        default=None,
+        help="Path to the Random Forest model file (.skops). Providing this flag "
+             "automatically disables the ACD-only veto."
     )
     parser.add_argument(
         "-pca", "--pca", 
         type=str, 
         default=None, #"./pca_files",
-        help="LookupTable pca."
+        help="Path to the lookup-table pca file. Providing this flag automatically "
+             "disables the ACD-only veto."
     )
-
-    parser.add_argument(
-        "-msize", "--min-event-size", 
-        type=int, 
-        default=3,
-        help="Minimum number of hits required for an event to be processed trough the PointNet."
-    )
-
     parser.add_argument(
         "--debug", 
         action="store_true", 
         help="Enable debug mode to print MC true processes into the output file."
     )
+    parser.add_argument(
+        "-3c", "--three-class",
+        action="store_true",
+        dest="three_class",
+        help="Use the 3-class PointNet model (PointNetModels/pointnet3C.py) instead "
+             "of the default 2-class model (PointNetModels/pointnet2C.py)."
+    )
+    parser.add_argument(
+        "--msize", "--min-event-size",
+        type=int,
+        default=3,
+        help="Minimum number of hits required for an event to be processed by the PointNet. "
+             "Signal Events with fewer hits will be classified as 'PH'."
+    )
 
     # Parse the arguments from command line
     args = parser.parse_args()
+
+    DEFAULT_RF_PATH = "./RandomForest/vega_model.skops"
+    DEFAULT_MODEL_PATH_2C = "./PointNetModels/test_torch_model_params_final_26-06.pth"
+    DEFAULT_MODEL_PATH_3C = "./PointNetModels/test_torch_model_params_3c_nhits.pth"
+
+    if args.random_forest is not None and args.pca is not None:
+        parser.error(
+            "--random-forest/-rf and --pca/-pca are mutually exclusive: "
+            "choose only one background classifier."
+        )
+
+    # Explicitly asking for -rf or -pca implies you want the veto disabled:
+    # no need to also pass --disable-onlyacd.
+    if args.random_forest is not None or args.pca is not None:
+        args.only_acd_veto = False
+
+    # If the veto is disabled (via --disable-onlyacd alone) but neither -rf nor
+    # -pca was given, fall back to the default Random Forest model path.
+    rf_path = args.random_forest
+    if not args.only_acd_veto and rf_path is None and args.pca is None:
+        rf_path = DEFAULT_RF_PATH
+
+    # If -m/--model wasn't given, pick the default checkpoint matching -3c/--three-class.
+    model_path = args.model
+    if model_path is None:
+        model_path = DEFAULT_MODEL_PATH_3C if args.three_class else DEFAULT_MODEL_PATH_2C
 
     # Pass the parsed arguments directly to the main function
     main(
         input_path=args.input, 
         output_dir=args.output_dir, 
         geometry_name=args.geometry, 
-        model_traced=args.model, 
+        model_traced=model_path, 
         onlyACDVeto=args.only_acd_veto, 
-        rf=None if args.pca is not None else args.random_forest,
+        rf=None if args.pca is not None else rf_path,
         lookup_path=args.pca,
-        minimum_size=args.min_event_size,
-        debug=args.debug
+        debug=args.debug,
+        min_size=args.msize,
+        three_class=args.three_class
     )
