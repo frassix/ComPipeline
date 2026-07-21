@@ -76,6 +76,13 @@ Default: None
 
 ---
 
+### `--msize / --min-event-size`
+Minimum number of hits required for an event to be processed trough the PointNet.
+
+Default: 3
+
+---
+
 ### `--debug`
 Adds the true MC process label (`MC` field) to each event in the output `.etp` file, read from the simulation's interaction records. Useful for comparing classifier output against ground truth.
 
