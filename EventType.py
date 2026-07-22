@@ -349,7 +349,7 @@ if __name__ == "__main__":
 
     DEFAULT_RF_PATH = "./RandomForest/vega_model.skops"
     DEFAULT_MODEL_PATH_2C = "./PointNetModels/test_torch_model_params_final_26-06.pth"
-    DEFAULT_MODEL_PATH_3C = "./PointNetModels/test_torch_model_params_3c_nhits.pth"
+    DEFAULT_MODEL_PATH_3C = "./PointNetModels/test_torch_model_params_3C_nhits.pth"
 
     if args.random_forest is not None and args.pca is not None:
         parser.error(
