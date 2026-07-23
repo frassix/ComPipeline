@@ -89,7 +89,22 @@ class EventClassifierPipeline:
 
         if not onlyACDVeto:
             data = self.extract_hit_data(event, 1)
-            prob = pca.analyze(data, event.GetTotalEnergyDeposit(), rf=self.pca_classifier, thr=thr)
+
+            # Hits in the tracker.
+            n_pts = data.shape[2] if data is not None else 0
+
+            prob = None
+            if data is not None:
+                prob = pca.analyze(data, event.GetTotalEnergyDeposit(), rf=self.pca_classifier, thr=thr)
+
+            if prob is None:
+                # PCA not computable (too few hits in the tracker, N < 3).
+                # Same criteria as in PointNet:
+                # we let the event pass to the next layer.
+                if n_pts >= self.min_size:
+                    return "SIGNAL", 1.00
+                return "MU", 1.00
+
             if prob > 0.5:
                 return "SIGNAL", prob
             return "MU", 1.-prob

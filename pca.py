@@ -40,7 +40,7 @@ def _clean_single(coord, threshold=0.99, min_pts=3):
         d2 = (Q * Q).sum(axis=1) - (Q @ axis) ** 2
         coord = np.delete(coord, int(np.argmax(d2)), axis=0)
 
-    # soglia non raggiunta: restituisci quel che resta
+    # thr not reached: return the last PCA result (even if R < threshold)
     R, eig, axis = _pca(coord)
     return len(coord), R, eig, axis
 
@@ -223,7 +223,7 @@ def analyze(hits, e_tot, rf, thr: float = 0.99):
     coords  = getCoord(hits)
     raw_pca = make_pca(coords)
     if raw_pca is None:
-        return 0.0
+        return None
     
     cle_pca = _clean_single(coords, thr)
 
